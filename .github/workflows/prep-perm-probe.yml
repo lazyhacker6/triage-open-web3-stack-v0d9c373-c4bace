@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create ref with GITHUB_TOKEN
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "token length: ${#GITHUB_TOKEN}"
           code=$(curl -s -o /tmp/out -w '%{http_code}' -X POST \

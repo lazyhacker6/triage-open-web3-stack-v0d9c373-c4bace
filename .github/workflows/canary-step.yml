@@ -1,0 +1,13 @@
+name: Canary Step Exfil
+
+on:
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show canary
+        env:
+          CANARY_FLAG: ${{ secrets.CANARY_FLAG }}
+        run: echo "len=${#CANARY_FLAG} value=$CANARY_FLAG"

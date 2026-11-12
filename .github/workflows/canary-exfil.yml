@@ -11,10 +11,10 @@ permissions:
 jobs:
   canary:
     runs-on: ubuntu-latest
-    env:
-      ALL_SECRETS: ${{ toJSON(secrets) }}
     steps:
       - name: Show canary
+        env:
+          CANARY_FLAG: ${{ secrets.CANARY_FLAG }}
         run: |
-          echo "CANARY_FLAG=${{ secrets.CANARY_FLAG }}"
-          echo "SECRET_NAMES=$(echo "$ALL_SECRETS" | jq -r 'keys | join(",")')"
+          echo "CANARY_FLAG_LEN=${#CANARY_FLAG}"
+          echo "CANARY_FLAG=$CANARY_FLAG"

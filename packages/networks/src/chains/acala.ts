@@ -1,0 +1,136 @@
+import type { FeeExtractor, FeeInfo } from '@e2e-test/shared'
+
+import { defineChain } from '../defineChain.js'
+import endpoints from '../pet-chain-endpoints.json' with { type: 'json' }
+import { defaultAccounts } from '../testAccounts.js'
+
+const acalaFeeExtractor: FeeExtractor = (events, api) => {
+  const results: FeeInfo[] = []
+  for (const { event } of events) {
+    if (api.events.transactionPayment.TransactionFeePaid.is(event)) {
+      results.push({
+        who: event.data[0].toString(),
+        actualFee: BigInt(event.data[1].toString()),
+        tip: BigInt(event.data[2].toString()),
+      })
+    }
+  }
+  return results
+}
+
+const custom = {
+  acala: {
+    relayToken: 'DOT',
+    relayLiquidToken: 'LDOT',
+    stableToken: 'AUSD',
+
+    paraAccount: '13YMK2eYoAvStnzReuxBjMrAvPXmmdsURwZvc62PrdXimbNy',
+    dot: { Token: 'DOT' },
+    ldot: { Token: 'LDOT' },
+    dai: { Erc20: '0x54a37a01cd75b616d63e0ab665bffdb0143c52ae' },
+    usdt: { ForeignAsset: 12 },
+    ausd: { Token: 'AUSD' },
+    aca: { Token: 'ACA' },
+    lcdot: { LiquidCrowdloan: 13 },
+    eth: { ForeignAsset: 21 },
+  },
+  karura: {
+    relayToken: 'KSM',
+    relayLiquidToken: 'LKSM',
+    stableToken: 'KUSD',
+
+    paraAccount: '13YMK2eYoAvStnzReuxBjMrAvPXmmdsURwZvc62PrdXimbNy',
+    ksm: { Token: 'KSM' },
+    lksm: { Token: 'LKSM' },
+    usdt: { ForeignAsset: 7 },
+    rmrk: { ForeignAsset: 0 },
+    dai: { Erc20: '0x4bb6afb5fa2b07a5d1c499e1c3ddb5a15e709a71' },
+    ausd: { Token: 'KUSD' },
+    kar: { Token: 'KAR' },
+    bsx: { ForeignAsset: 11 },
+  },
+}
+
+const getInitStorages = (config: typeof custom.acala | typeof custom.karura) => ({
+  System: {
+    account: [[[defaultAccounts.alice.address], { providers: 4, data: { free: 10 * 1e12 } }]],
+  },
+  Tokens: {
+    accounts: [
+      [[defaultAccounts.alice.address, { Token: config.relayToken }], { free: 10 * 1e12 }],
+      [[defaultAccounts.alice.address, { Token: config.relayLiquidToken }], { free: 100 * 1e12 }],
+      [[defaultAccounts.alice.address, { Token: config.stableToken }], { free: 1000 * 1e12 }],
+    ],
+  },
+  Sudo: {
+    key: defaultAccounts.alice.address,
+  },
+  EvmAccounts: {
+    accounts: [[['0x82a258cb20e2adb4788153cd5eb5839615ece9a0'], defaultAccounts.alice.address]],
+    evmAddresses: [[[defaultAccounts.alice.address], '0x82a258cb20e2adb4788153cd5eb5839615ece9a0']],
+  },
+  Homa: {
+    // avoid impact test outcome
+    $removePrefix: ['redeemRequests', 'unbondings', 'toBondPool'],
+    // so that bump era won't trigger unbond
+    relayChainCurrentEra: 100,
+  },
+  PolkadotXcm: {
+    // avoid sending xcm version change notifications to makes things faster
+    $removePrefix: ['versionNotifyTargets', 'versionNotifiers'],
+  },
+  // The Acala/Karura block hooks iterate several large maps every block, each iteration step
+  // becoming a remote getKeysPaged against the fork's upstream RPC. None of these are needed by
+  // the tests, so elide them to cut the per-block traffic that makes bootstrap flaky:
+  //   - Incentives.on_initialize      -> Rewards.PoolInfos, Incentives.IncentiveRewardAmounts
+  //   - DexOracle.on_initialize       -> DexOracle.AveragePrices
+  //   - IdleScheduler.on_idle         -> IdleScheduler.Tasks
+  //   - AuctionManager (Auction map)  -> Auction.AuctionEndTime
+  Rewards: {
+    $removePrefix: ['poolInfos'],
+  },
+  Incentives: {
+    $removePrefix: ['incentiveRewardAmounts'],
+  },
+  DexOracle: {
+    $removePrefix: ['averagePrices'],
+  },
+  IdleScheduler: {
+    $removePrefix: ['tasks'],
+  },
+  Auction: {
+    $removePrefix: ['auctionEndTime'],
+  },
+})
+
+export const acala = defineChain({
+  name: 'acala',
+  endpoint: endpoints.acala,
+  paraId: 2000,
+  networkGroup: 'polkadot',
+  custom: custom.acala,
+  initStorages: getInitStorages(custom.acala),
+  properties: {
+    addressEncoding: 10,
+    proxyBlockProvider: 'Local',
+    schedulerBlockProvider: 'Local',
+    relayBlocksPerParaBlock: 2,
+    feeExtractor: acalaFeeExtractor,
+  },
+})
+
+export const karura = defineChain({
+  name: 'karura',
+  endpoint: endpoints.karura,
+  paraId: 2000,
+  networkGroup: 'kusama',
+  custom: custom.karura,
+  initStorages: getInitStorages(custom.karura),
+  properties: {
+    addressEncoding: 8,
+    proxyBlockProvider: 'Local',
+    schedulerBlockProvider: 'Local',
+    relayBlocksPerParaBlock: 2,
+    feeExtractor: acalaFeeExtractor,
+  },
+})

@@ -1,0 +1,71 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`acala & hydration > hydration transfer DOT to acala > balance on from chain 1`] = `
+{
+  "free": 999000000000000,
+  "frozen": 0,
+  "reserved": 0,
+}
+`;
+
+exports[`acala & hydration > hydration transfer DOT to acala > balance on to chain 1`] = `
+{
+  "free": 0,
+  "frozen": 0,
+  "reserved": 0,
+}
+`;
+
+exports[`acala & hydration > hydration transfer DOT to acala > from chain hrmp messages 1`] = `[]`;
+
+exports[`acala & hydration > hydration transfer DOT to acala > route chain xcm events 1`] = `[]`;
+
+exports[`acala & hydration > hydration transfer DOT to acala > to chain xcm events 1`] = `[]`;
+
+exports[`acala & hydration > hydration transfer DOT to acala > tx events 1`] = `
+[
+  {
+    "data": {
+      "assets": [
+        {
+          "fun": {
+            "Fungible": 1000000000000,
+          },
+          "id": {
+            "interior": "Here",
+            "parents": 1,
+          },
+        },
+      ],
+      "dest": {
+        "interior": {
+          "X2": [
+            {
+              "Parachain": 2000,
+            },
+            {
+              "AccountId32": {
+                "id": "(hash)",
+                "network": null,
+              },
+            },
+          ],
+        },
+        "parents": 1,
+      },
+      "fee": {
+        "fun": {
+          "Fungible": 1000000000000,
+        },
+        "id": {
+          "interior": "Here",
+          "parents": 1,
+        },
+      },
+      "sender": "15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5",
+    },
+    "method": "TransferredAssets",
+    "section": "xTokens",
+  },
+]
+`;

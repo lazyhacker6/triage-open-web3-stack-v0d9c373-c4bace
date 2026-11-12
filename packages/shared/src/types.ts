@@ -1,0 +1,117 @@
+import type { Blockchain, StorageValues } from '@acala-network/chopsticks'
+
+import type { Chain } from '@e2e-test/networks'
+
+import type { ApiPromise, WsProvider } from '@polkadot/api'
+
+import type { TestContext } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, test } from 'vitest'
+
+import { match } from 'ts-pattern'
+
+export type Prettify<T> = {
+  [K in keyof T]: T[K]
+} & {}
+
+/**
+ * Type of client object produced by `setupNetworks` in E2E test suites.
+ */
+export type Client<
+  TCustom extends Record<string, unknown> | undefined,
+  TInitStorages extends Record<string, Record<string, any>> | undefined,
+> = {
+  config: Chain<TCustom, TInitStorages>
+
+  /**
+   * Chain properties derived from the chain definition.
+   * See {@link Chain} type in @e2e-test/networks for what these values represent.
+   */
+  url: string
+  chain: Blockchain
+  ws: WsProvider
+  api: ApiPromise
+  dev: {
+    newBlock: (param?: Partial<any>) => Promise<string>
+    setStorage: (values: StorageValues, blockHash?: string) => Promise<any>
+    timeTravel: (date: string | number) => Promise<number>
+    setHead: (hashOrNumber: string | number) => Promise<any>
+  }
+  teardown(): Promise<void>
+  pause(): Promise<unknown>
+}
+
+export type TestNode = {
+  kind: 'test'
+  /**
+   * The label used to identify the test node when `vitest.test` is called.
+   */
+  label: string
+  /**
+   * A function returning a promise (actual test body).
+   * This is passed into `vitest.test(...)` during registration.
+   */
+  testFn: (ctx?: TestContext) => Promise<void>
+  flags?: { only?: boolean; skip?: boolean; timeout?: number }
+  meta?: Record<string, any>
+}
+
+export type DescribeNode = {
+  kind: 'describe'
+  label: string
+  children: TestTreeChild[]
+  beforeAll?: () => Promise<void>
+  beforeEach?: () => Promise<void>
+  afterAll?: () => Promise<void>
+  flags?: { only?: boolean; skip?: boolean }
+  meta?: Record<string, any>
+}
+
+/**
+ * A test sub-tree - it can be a single `test`, or a `describe` node with its own children.
+ */
+type TestTreeChild = TestNode | DescribeNode
+
+/**
+ * A test tree, used to represent an E2E test suite.
+ *
+ * Vitest does not require it, but PET's E2E suites begin with a root `describe` node.
+ */
+export type RootTestTree = DescribeNode
+
+/**
+ * Create an end-to-end test tree, to be used in an E2E test suite.
+ *
+ * This function recursively walks an in-memory rose tree of `describe` / `test` nodes and
+ * registers them with Vitest.
+ *
+ * Call this exactly once per suite at module scope:
+ * ```ts
+ * const suite: TestTreeChild = { … }
+ * registerTestTree(suite)
+ * ```
+ *
+ * The function is intentionally side-effectful: each invocation calls
+ * `vitest.describe` / `vitest.test` immediately so that Vitest picks the tests
+ * up during collection.
+ */
+export function registerTestTree(testTree: TestTreeChild) {
+  match(testTree)
+    .with({ kind: 'test' }, (testNode) => {
+      const t = testNode.flags?.only ? test.only : testNode.flags?.skip ? test.skip : test
+
+      // Recall this is `test` from `vitest`
+      t(testNode.label, { timeout: testNode.flags?.timeout }, testNode.testFn)
+    })
+    .with({ kind: 'describe' }, (describeNode) => {
+      const d = describeNode.flags?.only ? describe.only : describeNode.flags?.skip ? describe.skip : describe
+
+      // Recall this is `describe` from `vitest`
+      d(describeNode.label, () => {
+        if (describeNode.beforeAll) beforeAll(describeNode.beforeAll)
+        if (describeNode.beforeEach) beforeEach(describeNode.beforeEach)
+        if (describeNode.afterAll) afterAll(describeNode.afterAll)
+        describeNode.children.forEach(registerTestTree)
+      })
+    })
+    .exhaustive()
+}

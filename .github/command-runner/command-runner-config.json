@@ -1,0 +1,14 @@
+{
+	"run": {
+		"allowed_issues": [45]
+	},
+	"merge": {
+		"allowed_users": ["xlc", "ntduan"]
+	},
+	"cancel-merge": {
+		"allowed_users": ["xlc", "ntduan"]
+	},
+	"bump": {
+		"allowed_issues": [45]
+	}
+}

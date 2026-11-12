@@ -1,0 +1,8 @@
+{
+	"name": "@e2e-test/kusama",
+	"type": "module",
+	"dependencies": {
+		"@acala-network/chopsticks-testing": "^1.5.2",
+		"@e2e-test/shared": "workspace:*"
+	}
+}

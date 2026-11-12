@@ -1,0 +1,444 @@
+# Polkadot Ecosystem Tests
+
+Automated testing suite for the Polkadot ecosystem powered by [Chopsticks](http://github.com/AcalaNetwork/chopsticks).
+
+## Quick Start
+
+```bash
+# Install dependencies
+yarn install
+
+# Run all tests
+yarn test
+
+# Run tests for specific chain
+yarn test <chain>
+
+# Run specific test
+yarn test -t <test-name> #<test-name> is what was passed to `vitest.test()`, usually inside a `describe()` suite
+
+# Run with Vitest UI
+yarn test:ui
+
+# Update snapshots
+yarn test -u
+```
+
+## For Network Operators
+
+### Automated Test Runs
+- Tests run every 6 hours automatically
+- Failed tests are retried after 5 minutes
+- Persistent failures trigger notifications
+- Subscribe to [notification issues](https://github.com/open-web3-stack/polkadot-ecosystem-tests/issues?q=is%3Aissue+is%3Aopen+label%3Anotifications) for updates
+
+### Manual Test Triggers
+Use the [bot trigger issue](https://github.com/open-web3-stack/polkadot-ecosystem-tests/issues/45) to run tests on-demand via GitHub Actions
+
+## For Test Writers
+
+### Test Naming Convention
+
+For XCM tests between two networks, use the naming convention
+
+```
+<chain-a>.<chain-b>.test.ts
+```
+
+For end-to-end tests on a single network, use
+
+```
+<chain-name>.<test-suite-name>.e2e.test.ts
+```
+
+#### Reason
+
+This repository has automated test failure reporting enabled.
+Each network has its own issue, to which the failing CI/CD pipeline will write a comment with the offending job.
+
+This naming convention is necessary so the script that does all this can correctly identify the issue it must write to.
+
+### Environment Configuration
+Create `.env` file with:
+```env
+# Required settings
+DB_PATH=./db.sqlite         # Cache database location
+RUNTIME_LOG_LEVEL=3         # Log level (1=error to 5=trace)
+LOG_LEVEL=info             # General logging (error/warn/info/debug/trace)
+
+# Optional overrides
+<NETWORK>_BLOCK_NUMBER=123  # Custom block number
+<NETWORK>_WASM=/path/to/wasm # Custom runtime
+<NETWORK>_ENDPOINT=wss://... # Custom endpoint
+```
+
+### Project Structure
+- `packages/shared/src/xcm`: Common XCM test suites
+- `package/shared/src/*.ts`: Common utilities for E2E tests.
+- `packages/kusama/src`: Kusama network tests
+- `packages/polkadot/src`: Polkadot network tests
+
+### About end-to-end tests
+
+This repository contains E2E tests for the Polkadot/Kusama networks.
+
+These include:
+- E2E suite for accounts and currency-related operations:
+  - tests for transfer functions: `transfer_allow_death`, `transfer_keep_alive`, `transfer_all`
+      - these tests include scenarios for successful transfers, transfers from accounts with insufficient funds,
+        transfers of values below ED, account reaping, and self-transfers
+  - tests for privileged functions: `force_transfer`, `force_unreserve`, `force_set_balance`, `force_adjust_total_issuance`
+      - these include cover both successful operations and insufficient priviledge failures
+      - in the case of `force_transfer`, they include cases similar to those of signed transfer operations
+      - `force_set_balance` tests include reaping checks when a balance below the chain's ED is set
+  - tests to `burn` check the proper modification of total issuance, as well as burns that can cause reaping
+  - tests to liquidity restrictions arising from the mixing of `Currency` and `Fungible` traits
+      - these tests combinatorially generate accounts with reserves and freezes from pallets that use the new `Fungible`
+      trait, and then attempts to create a reserve with an operation using the deprecated `Currency::reserve` functions.
+      - these tests currently expect the operation to fail, but will gradually start passing as networks' runtimes are
+      upgraded
+      - the actions used to trigger this bug are `proxy::add_proxy`, `multisig::as_multi`, and `referenda::submit`, althout
+        any pallet using `Currency::reserve` is at risk
+      - see https://github.com/paritytech/polkadot-sdk/pull/8108, and https://github.com/paritytech/polkadot-sdk/pull/9560/
+        for the fixes
+- E2E suite for proxy accounts:
+  - proxy account creation, removal
+  - pure proxy account creation, removal
+  - execution of proxy calls
+  - test delay in proxy actions, as well as announcement/removal, and executing of announced action
+  - proxy call filtering works both positively and negatively; in particular, for every proxy type in Polkadot/Kusama
+    relay and system parachains, it is checked that:
+      - a proxy of a given type can always execute calls which that proxy type is allowed to execute
+      - a proxy of a given type can never execute calls that its proxy type disallowws it from running
+        - see the section below for more
+  - E2E suite for multisig accounts and operations
+    - multisig creation, approval and execution
+    - multisig cancellation, and deposit refunding
+    - diverse failure modes tested (wrong timepoints, malformed execution/approval calls)
+- E2E suite for vesting
+  - normal (signed) and forced (root) vested transfers
+  - forced (root) vesting schedule removal
+  - merger of vesting schedules
+- E2E suite for nomination pools:
+  - Creating a pool, joining it, bonding extra
+  - Setting a pool's state, metadata, roles and commission data
+  - Scenario checking an account can be at most in one pool
+- E2E suite for governance infrastructure - referenda, preimages, and conviction voting. It includes
+  - Creating a referendum for a treasury proposal, voting on it (with conviction/split/abstain)
+  - Cancelling and killing referenda with XCM root-originated calls
+  - Noting and unnoting preimages
+- E2E suite for staking infrastructure:
+  - bonding funds, declaring intent to nominate/validate, unbonding, chilling, forcibly unstaking as `Root`
+    - includes a test to fast unstaking
+  - changing global staking configs - minimum nom./val. bonds, val. commissions, nom./val. counts, etc.
+  - more complex scenarios:
+    - forcefully updating a validator's commission after an increase to the global parameters' commission
+    - chilling other participants in the system, only when the conditions for doing so are met
+- E2E suite for the task scheduling mechanism provided by the `scheduler` pallet
+  - schedule tasks, named or otherwise
+  - cancel scheduled tasks
+- E2E test suite to the people chains in both networks. This suite contains scenarios such as
+  - Adding, modifying, and removing identities
+  - Requesting judgement requests on registrars, and providing it
+  - Adding registrars to the people chain by sending, from the relay chain, an XCM call with root origin
+  - Adding, modifying, and removing subidentities for an account
+- E2E test suite for bounties infrastructure:
+  - Bounty creation, approval, and funding workflows
+  - Curator assignment, acceptance, and management
+  - Bounty extension, awarding, and claiming processes
+  - Bounty closure in various states (proposed, funded, active)
+  - Curator unassignment scenarios (by curator themselves vs. treasurer)
+  - Comprehensive failure mode testing:
+    - Invalid bounty values and descriptions
+    - Premature curator unassignment
+    - Bounty closure restrictions (approved/pending payout states)
+    - Non-curator attempting to accept curator role
+    - Child bounty constraints preventing parent bounty closure
+- E2E test suite for child bounties infrastructure:
+  - Child bounty creation, curator assignment, acceptance, awarding and claiming workflows
+  - Child bounty closure and fund return to parent bounty
+  - Child bounty rejection by curators and cancellation by parent curators
+  - Curator unassignment scenarios with different deposit handling (refund vs. slash)
+  - Storage verification for child bounty counters and cleanup
+  - Comprehensive failure mode testing:
+    - Creating child bounties from non-active parent bounties
+    - Child bounty with InvalidValue, InvalidIndex, InvalidFee, TooManyChildBounties, ReasonTooBig
+    - Accepting curators in wrong child bounty states
+    - Closing child bounties in pending payout status
+    - Non-curator attempting to create child bounties
+- E2E test suite for the PSM (Peg Stability Module), covering mint/redeem
+  swaps between pUSD and three external stablecoins: USDT (1984, 6 dec), USDX (1338, 2 dec), DAI
+  (1339, 18 dec). PSM storage and extrinsics are keyed by XCM V5 location rather than asset ID.
+  Tests are grouped into:
+  - core swaps: mint, redeem, minimum swap enforcement
+  - asset lifecycle: adding/removing assets, ceiling assignment, fee persistence across removal
+  - circuit breaker: MintingDisabled and AllDisabled status modes, signed-origin rejection
+  - value conservation: fee accounting, insurance fund, residual debt after full redemption
+  - ceiling dynamics: per-asset and global debt ceilings, weight normalisation, interactions
+    between assets at their respective ceilings
+  - reserve integrity: minting within/exceeding global ceiling, debt accumulation, over-redemption
+- E2E test for cross-consensus bridge scenarios:
+  - Fellowship whitelists a call on Kusama Asset Hub over the Polkadot-Kusama bridge
+    (Collectives -> Asset Hub Polkadot -> Bridge Hub Polkadot -> Bridge Hub Kusama -> Asset Hub Kusama)
+  - Uses chopsticks' `connectBridgeHubs` to relay bridge messages between forked chains
+- E2E test suite for the `configuration` pallet on relay chains:
+  - Scheduling configuration updates via Root origin across all parameter groups: core (code size, PoV size, upgrade cooldown/delay), scheduler (group rotation, availability period, lookahead, validators per core), dispute resolution, message queue (upward/downward queue limits), HRMP channel parameters, and advanced parameters (PVF voting TTL, async backing params, executor params, approval voting, node features)
+  - Verifying that the pending config entry is scheduled for session index `currentIndex + 2`
+  - Idempotency: re-scheduling the same configuration values leaves the pending entry unchanged
+  - Overwrite behaviour: a later scheduled value for the same field replaces the earlier one
+  - Same-block merge: multiple changes scheduled in the same block are folded into a single pending entry
+  - Consistency check matrix:
+    - Consistent base + inconsistent new value → rejected with `InvalidNewValue`
+    - Inconsistent base + inconsistent new value → accepted (recovery path)
+    - Inconsistent base + consistent new value → accepted
+    - `bypassConsistencyCheck` flag enabled → inconsistent values accepted unconditionally
+     - Asserting that all configuration setters fail when called with a signed (non-Root) origin
+- E2E test suite for the Fellowship salary pallet on Polkadot Collectives:
+  - Full salary lifecycle: `induct` → `bump` → `register` → `payout`, verifying
+    claimant state transitions and XCM dispatch at each step
+  - Cycle status invariants: budget reset on `bump`, `totalRegistrations` accumulation
+    after `register`, `totalUnregisteredPaid` tracking after unregistered payout
+  - Cross-chain payment: `payout` dispatches XCM from Collectives to Asset Hub,
+    verifying Hollar delivery to the member; `payoutOther` verifies delivery to an
+    explicit beneficiary
+  - Unregistered payout: a fellow who missed registration still receives payment from
+    the residual budget pot after all registered members are paid
+  - Proration: when total registrations exceed the cycle budget, individual payouts are
+    reduced proportionally
+  - Sufficient-asset semantics: since the salary asset (Hollar) is now a sufficient asset
+    on Asset Hub, a member with no DOT for existential deposit still receives their payout
+  - Mid-cycle promotion: a payout uses the amount locked at registration time, not the
+    member's current rank if they were promoted after registering
+  - Dispatchable failure paths: `induct` (`NotMember`, `AlreadyInducted`), `register`
+    (`NotInducted`, `NoClaim`, `TooLate`), `bump` (`NotYet`, `NotStarted`), `payout`
+    (`NotInducted`, `TooEarly`), and `init` (`AlreadyStarted`)
+  - `check_payment`: confirms a successful payout resets the claimant to `Nothing`, and
+    rejects the ineligible cases (`NotInducted`, `NoClaim`, `NotCurrent`, `Inconclusive`)
+  - Account swap: exchanging a fellow's account migrates their salary claimant and emits
+    the `Swapped` event
+  - All salary amounts and period lengths read from live chain state
+    (`fellowshipCore.params`, `fellowshipSalary` constants), not hardcoded
+- E2E test suite for the Fellowship referenda pallet on Polkadot Collectives:
+  - Full referendum lifecycle driven end to end: seed rank-3 fellows into the live
+    collective, `fellowshipReferenda.submit`, place the decision deposit, cast real
+    `fellowshipCollective.vote` ayes, and fast-forward the referendum clock via
+    storage surgery (backdate the decision period, relocate the scheduler alarm and
+    enactment task). The tally is real; only time is edited
+  - Cross-chain whitelist: the enacted referendum sends an XCM `Transact` from
+    Collectives to Asset Hub Polkadot, exercising the genuine
+    `WhitelistOrigin = EnsureXcm<IsFellowshipVoice>` path and asserting
+    `whitelist.CallWhitelisted` on the destination
+  - Referendum lifecycle assertions: `Submitted`, `DecisionDepositPlaced`, `Voted`, and
+    `Confirmed` are each checked at the block they emit, scrutinizing event fields (poll
+    index, proposal hash/length, depositor and voter by public key, Aye vote)
+  - Rank gating: a rank-2 member voting on the Fellows (rank-3) track is rejected with
+    `RankTooLow`
+  - Geometric vote weight: with mixed-rank voters, the tally reflects
+    `v*(v+1)/2` (where `v = rank − trackMinRank + 1`) rather than one-member-one-vote
+  - Merge-based seeding preserves the real electorate: new members are appended at
+    the live `memberCount` per tier, keeping the ranked-collective index invariants
+    intact so live members and their (rank, index) slots are untouched
+
+The intent behind these end-to-end tests is to cover the basic behavior of relay chains' and system
+parachains' runtimes.
+
+Initial coverage can be limited to critical path scenarios composed of common extrinsics
+from each of a runtime's pallets, and from there test more complex interactions.
+
+Note that since block execution throughput in `chopsticks` on a local development machine is limited
+to roughly `1-10` blocks/second, not all scenarios are testable in practice e.g. referenda
+confirmation, or the unbonding of staked funds.
+Consider placing such tests elsewhere, or using different tools (e.g. XCM emulator).
+
+#### Proxy call filtering checker
+
+The proxy E2E test suite contains checks to proxy types' allowed and disallowed calls - for many chains.
+Because these tests are extensive and hard to manually verify (the test code itself and the snapshots), there exists a
+coverage checking script (`scripts/check-proxy-coverage.ts`)
+It searches for allowed/forbidden call coverage for a chain's proxy types.
+
+Run it with `yarn check-proxy-coverage` to see which proxy types need test coverage.
+
+### Test Guidelines
+- Write network-agnostic tests where possible
+- Handle minor chain state changes gracefully
+- Use `.redact()` for volatile values
+  - Pass `{ number: n }` to `.redact()` to explicitly redact all but the `n` most significant digits
+  - Pass `{ removeKeys: new RegExp(s) }` to remove keys from an object that are unwanted when e.g.
+    using `toMatchObject/toMatchSnapshot`. `s` can contain several fields e.g.
+    `"alarm|index|submitted"`. Check [this page](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp) for how to use `RegExp`.
+- Leverage snapshots for easier maintenance
+- Follow naming convention: `<chain1>.<chain2>.test.ts` or `<chain1>.test.ts`
+
+### Adding New Chains
+1. Add chain configuration in `packages/networks/src/chains/`
+2. Update chain index in `packages/networks/src/chains/index.ts`
+3. Create notification issue
+4. Update `.github/workflows/notifications.json`
+
+### Adding new E2E tests
+1. Create a file in `packages/shared/src/` with the E2E tests, and their required utilities
+  - This assumes that the E2E test will run on Polkadot/Kusama: its code being shared makes it
+    reusable on both chains
+2. Using the shared utilities created in the previous step, create Polkadot/Kusama tests in
+  `packages/polkadot/src`/`packages/kusama/src`, respectively.
+3. Run the newly created tests so their snapshots can be created in `packages/<network>/src/__snapshots__`
+  - Inspect the snapshots, and make corrections to tests as necessary - or upstream, if the test
+    has revealed an issue with e.g. `polkadot-sdk`
+4. Create a PR with the new tests.
+
+### Subway Configuration for E2E Tests
+
+Chains with E2E tests should use Subway. Subway acts as a caching RPC proxy that improves test reliability and performance by:
+- Load balancing across multiple RPC endpoints
+- Caching responses to reduce upstream load
+- Providing health checks and timeouts
+- Rate limiting to prevent overwhelming upstream nodes
+
+#### Updating JSON config with a chain's endpoints
+
+**Finding RPC endpoints:** Check [Polkadot.js Apps](https://polkadot.js.org/apps) or the [PAPI console](https://papi.how) for public endpoints, or consult the chain's documentation. Use 2-3 reliable endpoints for redundancy.
+
+**Step 1: Modify PET's endpoint configuration file**
+
+Location: `packages/networks/src/pet-chain-endpoints.json`
+
+**Step 2: Register the chain in CI workflows**
+
+Add your chain to the appropriate network's `chains` list in both `.github/workflows/ci.yml` and `.github/workflows/update-snapshot.yml`.
+
+Find the matrix entry for your network and add your chain:
+
+```yaml
+matrix:
+  network:
+    - name: "polkadot"  # Choose "polkadot" or "kusama" based on your chain's ecosystem
+      chains:
+        # ... existing chains for this network ...
+        - { chain: "<chainName>", port: 90XX, endpoint_var: "<CHAINNAME>_ENDPOINT" }
+```
+
+- Choose any unused port number (check existing matrix entries to avoid conflicts)
+- Follow the naming convention for `endpoint_var`: uppercase chain name + `_ENDPOINT`
+- Add the same configuration to **both** workflow files
+
+**What this enables:**
+- Both the [CI workflow](.github/workflows/ci.yml) and [Update Snapshots workflow](.github/workflows/update-snapshot.yml) will automatically:
+  - Install and start Subway for the added network
+  - Run tests through the caching proxy (via `ws://localhost:{port}`)
+  - Set `<CHAIN_NAME>_ENDPOINT` environment variable for test access
+- Increased test reliability and speed due to response caching
+- Multiple Subway instances run in parallel for different chains
+
+### Writing Tests
+
+#### Test Structure
+
+Tests are organized using Vitest and follow this general structure:
+
+```typescript
+import { coretimePolkadot, polkadot } from '@e2e-test/networks/chains'
+import { setupNetworks } from '@e2e-test/shared'
+import { sendTransaction } from '@acala-network/chopsticks-testing'
+import { check, checkEvents, checkSystemEvents } from '../helpers/index.js'
+
+describe('chain.otherChain', () => {
+  // Create network instance before tests
+  const [polkadotClient, coretimeClient] = await setupNetworks(polkadot, coretimePolkadot)
+
+  it('should transfer tokens', async () => {
+    // Test implementation
+    const tx = await sendTransaction(polkadotClient.api.tx.xcmPallet.teleportAssets( /* args */ ))
+
+    // Assertions using snapshots
+    await checkEvents(result).toMatchSnapshot('teleportAssets events');
+  })
+})
+```
+
+#### Key Testing Patterns
+
+1. **Network Setup**
+```typescript
+// Create chain clients
+const [polkadotClient, coretimeClient] = await setupNetworks(polkadot, coretimePolkadot)
+```
+
+2. **Snapshot Testing**
+```typescript
+// Redact volatile values
+await check(result).redact().toMatchSnapshot();
+
+// Redact specific digits
+check(result.redact({ number: 1 })).toMatchSnapshot();
+
+// Remove specific keys
+check(result.redact({
+  removeKeys: /(timestamp|blockHash)/
+})).toMatchSnapshot();
+```
+
+3. **Executing extrinsics with a given origin**
+Use `scheduleCallWithOrigin` on chains whose runtime includes `pallet-scheduler` to be able to execute
+permission-restricted extrinsics with the appropriate origin e.g. `Root`-gated global parameter controls
+for staking and nomination pools
+
+4. **Send XCM `Transact`s to execute extrinsics with given origin in parachain**
+In parachains where `pallet-scheduler` is not available, but whose relay chain has it, use `createXcmTransactSend` 
+along with `scheduleCallWithOrigin` to prepare and schedule sending of an XCM to perform the technique in 3. in the desired parachain.
+
+    4.1. Take care to adjust the parameters in accordance with the destination parachain, in particular
+         `refTime/proofSize`
+
+Read [here](https://github.com/AcalaNetwork/chopsticks?tab=readme-ov-file#testing-with-acala-networkchopsticks-testing) for more about `@acala-network/chopsticks-testing`
+
+
+#### Best Practices
+
+1. **Network-Agnostic Testing**
+   - Write shared test suites in `packages/shared/src/`
+   - Implement chain-specific tests in respective packages
+   - Use parameterized tests for multi-chain scenarios
+
+2. **Snapshot Testing**
+   - Prefer snapshots over manual assertions
+   - Redact volatile values to prevent flaky tests
+   - Review snapshot changes carefully
+   - Keep snapshots focused and readable
+   - Update snapshots when behavior changes intentionally
+
+3. **Error Handling**
+   - Test both success and failure cases
+   - Verify error messages and types
+   - Handle chain-specific error scenarios
+
+### Regenerate Snapshots
+
+It is recommended to regenerate snapshots when renaming or removing tests. This can be done by deleting `__snapshots__` folders and running `yarn test -u`.
+
+### Debugging Tips
+- Use `{ only: true }` to isolate tests
+- Add logging to shared test suites
+- Insert `await chain.pause()` for state inspection
+- Connect via Polkadot.js Apps to paused chains
+  - Check the logs of the terminal running the `.pause`d test for the address and port
+- Try to reproduce unexpected test result in a standalone Chopsticks instance
+- Carefully review snapshot changes
+
+### Block Number Management
+```bash
+# Update KNOWN_GOOD_BLOCK_NUMBERS.env to latest
+yarn update-known-good
+
+# Update .env to latest (CI always uses KNOWN_GOOD_BLOCK_NUMBERS.env)
+yarn update-env
+```
+
+## For Maintainers
+
+### Bot Commands
+- `/bot update` - Update snapshots
+- `/bot merge` - Approve and enable auto-merge
+- `/bot cancel-merge` - Disable auto-merge
+
+Authorized users are defined in `.github/command-runner/command-runner-config.json`

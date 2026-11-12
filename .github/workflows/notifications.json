@@ -1,0 +1,25 @@
+{
+	"polkadot": 140,
+	"assetHubPolkadot": 137,
+	"bridgeHubPolkadot": 207,
+	"collectivesPolkadot": 192,
+	"coretimePolkadot": 141,
+	"peoplePolkadot": 540,
+	"acala": 136,
+	"astar": 138,
+	"bifrostPolkadot": 539,
+	"hydration": 142,
+	"moonbeam": 139,
+
+	"kusama": 133,
+	"assetHubKusama": 129,
+	"bridgeHubKusama": 208,
+	"coretimeKusama": 132,
+	"encointerKusama": 367,
+	"peopleKusama": 135,
+	"basilisk": 131,
+	"bifrostKusama": 541,
+	"karura": 130,
+	"shiden": 134,
+	"unknown": 143
+}
